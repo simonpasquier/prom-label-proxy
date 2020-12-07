@@ -1,23 +1,25 @@
 component: "Monitoring"
 
 reviewers:
-- brancz
-- krasi-georgiev
 - metalmatze
 - paulfantom
-- pgier
 - s-urbaniak
 - simonpasquier
 - squat
 - lilic
+- dgrisonnet
 
 approvers:
-- brancz
-- krasi-georgiev
 - metalmatze
 - paulfantom
-- pgier
 - s-urbaniak
 - simonpasquier
 - squat
 - lilic
+- dgrisonnet
+
+emeritus_approvers:
+- brancz
+- krasi-georgiev
+- pgier
+
