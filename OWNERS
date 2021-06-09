@@ -1,25 +1,21 @@
 component: "Monitoring"
 
 reviewers:
-- metalmatze
 - paulfantom
-- s-urbaniak
 - simonpasquier
 - squat
-- lilic
 - dgrisonnet
 
 approvers:
-- metalmatze
 - paulfantom
-- s-urbaniak
 - simonpasquier
 - squat
-- lilic
 - dgrisonnet
 
 emeritus_approvers:
 - brancz
 - krasi-georgiev
+- lilic
+- metalmatze
 - pgier
-
+- s-urbaniak
