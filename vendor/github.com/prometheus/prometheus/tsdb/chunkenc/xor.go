@@ -178,16 +178,16 @@ func (a *xorAppender) Append(t int64, v float64) {
 		case dod == 0:
 			a.b.writeBit(zero)
 		case bitRange(dod, 14):
-			a.b.writeBits(0x02, 2) // '10'
+			a.b.writeBits(0b10, 2)
 			a.b.writeBits(uint64(dod), 14)
 		case bitRange(dod, 17):
-			a.b.writeBits(0x06, 3) // '110'
+			a.b.writeBits(0b110, 3)
 			a.b.writeBits(uint64(dod), 17)
 		case bitRange(dod, 20):
-			a.b.writeBits(0x0e, 4) // '1110'
+			a.b.writeBits(0b1110, 4)
 			a.b.writeBits(uint64(dod), 20)
 		default:
-			a.b.writeBits(0x0f, 4) // '1111'
+			a.b.writeBits(0b1111, 4)
 			a.b.writeBits(uint64(dod), 64)
 		}
 
@@ -240,7 +240,7 @@ func (a *xorAppender) writeVDelta(v float64) {
 }
 
 type xorIterator struct {
-	br       bstream
+	br       bstreamReader
 	numTotal uint16
 	numRead  uint16
 
@@ -328,7 +328,10 @@ func (it *xorIterator) Next() bool {
 	// read delta-of-delta
 	for i := 0; i < 4; i++ {
 		d <<= 1
-		bit, err := it.br.readBit()
+		bit, err := it.br.readBitFast()
+		if err != nil {
+			bit, err = it.br.readBit()
+		}
 		if err != nil {
 			it.err = err
 			return false
@@ -341,15 +344,16 @@ func (it *xorIterator) Next() bool {
 	var sz uint8
 	var dod int64
 	switch d {
-	case 0x00:
+	case 0b0:
 		// dod == 0
-	case 0x02:
+	case 0b10:
 		sz = 14
-	case 0x06:
+	case 0b110:
 		sz = 17
-	case 0x0e:
+	case 0b1110:
 		sz = 20
-	case 0x0f:
+	case 0b1111:
+		// Do not use fast because it's very unlikely it will succeed.
 		bits, err := it.br.readBits(64)
 		if err != nil {
 			it.err = err
@@ -360,7 +364,10 @@ func (it *xorIterator) Next() bool {
 	}
 
 	if sz != 0 {
-		bits, err := it.br.readBits(int(sz))
+		bits, err := it.br.readBitsFast(sz)
+		if err != nil {
+			bits, err = it.br.readBits(sz)
+		}
 		if err != nil {
 			it.err = err
 			return false
@@ -379,7 +386,10 @@ func (it *xorIterator) Next() bool {
 }
 
 func (it *xorIterator) readValue() bool {
-	bit, err := it.br.readBit()
+	bit, err := it.br.readBitFast()
+	if err != nil {
+		bit, err = it.br.readBit()
+	}
 	if err != nil {
 		it.err = err
 		return false
@@ -388,7 +398,10 @@ func (it *xorIterator) readValue() bool {
 	if bit == zero {
 		// it.val = it.val
 	} else {
-		bit, err := it.br.readBit()
+		bit, err := it.br.readBitFast()
+		if err != nil {
+			bit, err = it.br.readBit()
+		}
 		if err != nil {
 			it.err = err
 			return false
@@ -397,14 +410,20 @@ func (it *xorIterator) readValue() bool {
 			// reuse leading/trailing zero bits
 			// it.leading, it.trailing = it.leading, it.trailing
 		} else {
-			bits, err := it.br.readBits(5)
+			bits, err := it.br.readBitsFast(5)
+			if err != nil {
+				bits, err = it.br.readBits(5)
+			}
 			if err != nil {
 				it.err = err
 				return false
 			}
 			it.leading = uint8(bits)
 
-			bits, err = it.br.readBits(6)
+			bits, err = it.br.readBitsFast(6)
+			if err != nil {
+				bits, err = it.br.readBits(6)
+			}
 			if err != nil {
 				it.err = err
 				return false
@@ -417,14 +436,17 @@ func (it *xorIterator) readValue() bool {
 			it.trailing = 64 - it.leading - mbits
 		}
 
-		mbits := int(64 - it.leading - it.trailing)
-		bits, err := it.br.readBits(mbits)
+		mbits := 64 - it.leading - it.trailing
+		bits, err := it.br.readBitsFast(mbits)
+		if err != nil {
+			bits, err = it.br.readBits(mbits)
+		}
 		if err != nil {
 			it.err = err
 			return false
 		}
 		vbits := math.Float64bits(it.val)
-		vbits ^= (bits << it.trailing)
+		vbits ^= bits << it.trailing
 		it.val = math.Float64frombits(vbits)
 	}
 
