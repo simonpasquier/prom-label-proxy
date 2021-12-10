@@ -1,4 +1,4 @@
-## 0.4.0 / 2021-09-29
+## 0.4.0 / 2021-10-05
 * [ENHANCEMENT] Support HTTP POST for /api/v1/labels endpoint. #70
 * [FEATURE] Add `--error-on-replace` flag (defaults to `false`) to return an error if a label value would otherwise be siltently replaced. #67
 * [ENHANCEMENT] Add label enforce support for the new query_exemplars API. #65
