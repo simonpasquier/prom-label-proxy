@@ -6,14 +6,13 @@ reviewers:
 - squat
 - dgrisonnet
 - slashpai
-- prashbnair
 - arajkumar
 - sthaha
 - PhilipGough
 - bison
-- fpetkovski
 - raptorsun
 - jan--f
+- JoaoBraveCoding
 
 approvers:
 - paulfantom
@@ -21,14 +20,13 @@ approvers:
 - squat
 - dgrisonnet
 - slashpai
-- prashbnair
 - arajkumar
 - sthaha
 - PhilipGough
 - bison
-- fpetkovski
 - raptorsun
 - jan--f
+- JoaoBraveCoding
 
 emeritus_approvers:
 - brancz
