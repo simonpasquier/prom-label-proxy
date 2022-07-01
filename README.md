@@ -5,7 +5,7 @@
 The prom-label-proxy can enforce a given label in a given PromQL query, in Prometheus API responses or in Alertmanager API requests. As an example (but not only),
 this allows read multi-tenancy for projects like Prometheus, Alertmanager or Thanos.
 
-This proxy does not perform authentication or authorization, this has to happen before the request reaches this proxy, allowing you to use any authN/authZ system you want. The [kube-rbac-proxy](https://github.com/brancz/kube-rbac-proxy) is an example for such an additional building block.
+This proxy does not perform authentication or authorization, this has to happen before the request reaches this proxy, allowing you to use any authN/authZ system you want. The [kube-rbac-proxy](https://github.com/brancz/kube-rbac-proxy) is an example for such an additional building block. Additionally, you can use prom-label-proxy as a library in your own proxy, like what is done in [prom-authzed-proxy](https://github.com/authzed/prom-authzed-proxy).
 
 ### Risks outside the scope of this project
 
@@ -49,6 +49,7 @@ This application proxies the following endpoints and it ensures that a particula
 * `/api/v1/alerts` for GET method (Prometheus/Thanos)
 * `/api/v2/silences` for GET and POST methods (Alertmanager)
 * `/api/v2/silence/` for DELETE (Alertmanager)
+* `/api/v2/alerts/groups` for GET (Alertmanager)
 
 When started with the `-enable-label-apis` flag, the application can also proxy the following endpoints:
 
