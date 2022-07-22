@@ -417,7 +417,6 @@ func (r *routes) passthrough(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *routes) query(w http.ResponseWriter, req *http.Request) {
-
 	e := NewEnforcer(r.errorOnReplace,
 		[]*labels.Matcher{{
 			Name:  r.label,
