@@ -22,6 +22,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/efficientgo/tools/core/pkg/merrors"
@@ -210,6 +211,11 @@ func (hff HTTPFormEnforcer) ExtractLabel(next http.HandlerFunc) http.Handler {
 }
 
 func (hff HTTPFormEnforcer) getLabelValues(r *http.Request) ([]string, error) {
+	err := r.ParseForm()
+	if err != nil {
+		return nil, fmt.Errorf("the query parameter can not be parsed: %w", err)
+	}
+
 	formValues := r.Form[hff.ParameterName]
 
 	if len(formValues) == 0 {
@@ -400,6 +406,7 @@ func MustLabelValues(ctx context.Context) []string {
 }
 
 func joinMultipleLabelValues(labelValues []string) string {
+	sort.Strings(labelValues)
 	lvs := make([]string, len(labelValues))
 	for i := range labelValues {
 		lvs[i] = regexp.QuoteMeta(labelValues[i])
