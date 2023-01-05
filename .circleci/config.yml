@@ -31,18 +31,20 @@ workflows:
           filters:
             tags:
               only: /.*/
-      - prometheus/publish_master:
+      - prometheus/publish_main:
           docker_hub_organization: ""  # Don't publish to DockerHub.
           quay_io_organization: prometheuscommunity
+          docker_version: "20.10.18"
           requires:
             - test
             - build
           filters:
             branches:
-              only: master
+              only: main
       - prometheus/publish_release:
           docker_hub_organization: ""  # Don't publish to DockerHub.
           quay_io_organization: prometheuscommunity
+          docker_version: "20.10.18"
           requires:
             - test
             - build
