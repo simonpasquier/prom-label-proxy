@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -338,7 +337,7 @@ func TestRules(t *testing.T) {
 		{
 			// No "namespace" parameter returns an error.
 			expCode: http.StatusBadRequest,
-			expBody: []byte("Bad request. The \"namespace\" query parameter must be provided.\n"),
+			expBody: []byte(`{"error":"The \"namespace\" query parameter must be provided.","errorType":"prom-label-proxy","status":"error"}` + "\n"),
 		},
 		{
 			// non 200 status code from upstream is passed as-is.
@@ -658,7 +657,7 @@ func TestRules(t *testing.T) {
 		t.Run(fmt.Sprintf("%s=%s", proxyLabel, tc.labelv), func(t *testing.T) {
 			m := newMockUpstream(tc.upstream)
 			defer m.Close()
-			r, err := NewRoutes(m.url, proxyLabel)
+			r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -686,7 +685,7 @@ func TestRules(t *testing.T) {
 				t.Fatalf("expected status code %d, got %d", tc.expCode, resp.StatusCode)
 			}
 
-			body, _ := ioutil.ReadAll(resp.Body)
+			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				if string(body) != string(tc.expBody) {
 					t.Fatalf("expected: %q, got: %q", string(tc.expBody), string(body))
@@ -719,7 +718,7 @@ func TestAlerts(t *testing.T) {
 		{
 			// No "namespace" parameter returns an error.
 			expCode: http.StatusBadRequest,
-			expBody: []byte("Bad request. The \"namespace\" query parameter must be provided.\n"),
+			expBody: []byte(`{"error":"The \"namespace\" query parameter must be provided.","errorType":"prom-label-proxy","status":"error"}` + "\n"),
 		},
 		{
 			// non 200 status code from upstream is passed as-is.
@@ -837,7 +836,7 @@ func TestAlerts(t *testing.T) {
 		t.Run(fmt.Sprintf("%s=%s", proxyLabel, tc.labelv), func(t *testing.T) {
 			m := newMockUpstream(tc.upstream)
 			defer m.Close()
-			r, err := NewRoutes(m.url, proxyLabel)
+			r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -860,7 +859,7 @@ func TestAlerts(t *testing.T) {
 				t.Fatalf("expected status code %d, got %d", tc.expCode, resp.StatusCode)
 			}
 
-			body, _ := ioutil.ReadAll(resp.Body)
+			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				if string(body) != string(tc.expBody) {
 					t.Fatalf("expected: %q, got: %q", string(tc.expBody), string(body))

@@ -16,7 +16,6 @@ package injectproxy
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,11 +31,11 @@ func checkParameterAbsent(param string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		kvs, err := url.ParseQuery(req.URL.RawQuery)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
 			return
 		}
 		if len(kvs[param]) != 0 {
-			http.Error(w, fmt.Sprintf("unexpected parameter %q", param), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("unexpected parameter %q", param), http.StatusInternalServerError)
 			return
 		}
 		next.ServeHTTP(w, req)
@@ -47,12 +46,12 @@ func checkFormParameterAbsent(param string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		err := req.ParseForm()
 		if err != nil {
-			http.Error(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
 			return
 		}
 		kvs := req.Form
 		if len(kvs[param]) != 0 {
-			http.Error(w, fmt.Sprintf("unexpected Form parameter %q", param), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("unexpected Form parameter %q", param), http.StatusInternalServerError)
 			return
 		}
 		next.ServeHTTP(w, req)
@@ -64,29 +63,29 @@ func checkQueryHandler(body, key string, values ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		kvs, err := url.ParseQuery(req.URL.RawQuery)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
 			return
 		}
 		// Verify that the client provides the parameter only once.
 		if len(kvs[key]) != len(values) {
-			http.Error(w, fmt.Sprintf("expected %d values of parameter %q, got %d", len(values), key, len(kvs[key])), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("expected %d values of parameter %q, got %d", len(values), key, len(kvs[key])), http.StatusInternalServerError)
 			return
 		}
 		sort.Strings(values)
 		sort.Strings(kvs[key])
 		for i := range values {
 			if kvs[key][i] != values[i] {
-				http.Error(w, fmt.Sprintf("expected parameter %q with value %q, got %q", key, values[i], kvs[key][i]), http.StatusInternalServerError)
+				prometheusAPIError(w, fmt.Sprintf("expected parameter %q with value %q, got %q", key, values[i], kvs[key][i]), http.StatusInternalServerError)
 				return
 			}
 		}
-		buf, err := ioutil.ReadAll(req.Body)
+		buf, err := io.ReadAll(req.Body)
 		if err != nil {
-			http.Error(w, "failed to read body", http.StatusInternalServerError)
+			prometheusAPIError(w, "failed to read body", http.StatusInternalServerError)
 			return
 		}
 		if string(buf) != body {
-			http.Error(w, fmt.Sprintf("expected body %q, got %q", body, string(buf)), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("expected body %q, got %q", body, string(buf)), http.StatusInternalServerError)
 			return
 		}
 
@@ -100,20 +99,20 @@ func checkFormHandler(key string, values ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		err := req.ParseForm()
 		if err != nil {
-			http.Error(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("unexpected error: %v", err), http.StatusInternalServerError)
 			return
 		}
 		kvs := req.PostForm
 		// Verify that the client provides the parameter only once.
 		if len(kvs[key]) != len(values) {
-			http.Error(w, fmt.Sprintf("expected %d values of parameter %q, got %d", len(values), key, len(kvs[key])), http.StatusInternalServerError)
+			prometheusAPIError(w, fmt.Sprintf("expected %d values of parameter %q, got %d", len(values), key, len(kvs[key])), http.StatusInternalServerError)
 			return
 		}
 		sort.Strings(values)
 		sort.Strings(kvs[key])
 		for i := range values {
 			if kvs[key][i] != values[i] {
-				http.Error(w, fmt.Sprintf("expected parameter %q with value %q, got %q", key, values[i], kvs[key][i]), http.StatusInternalServerError)
+				prometheusAPIError(w, fmt.Sprintf("expected parameter %q with value %q, got %q", key, values[i], kvs[key][i]), http.StatusInternalServerError)
 				return
 			}
 		}
@@ -159,57 +158,57 @@ func TestWithPassthroughPaths(t *testing.T) {
 
 	t.Run("invalid passthrough options", func(t *testing.T) {
 		// Duplicated /api.
-		_, err := NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "/api1"}))
+		_, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "/api1"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// Wrong format, params in path.
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1?args=1", "/api1"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1?args=1", "/api1"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// / is not allowed.
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/", "/api2/something", "/api1"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/", "/api2/something", "/api1"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// "" is not allowed.
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// Duplication with existing enforced path is not allowed.
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "/federate", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "/federate", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// Duplication with existing enforced path is not allowed.
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "/federate/", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "/federate/", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// Duplication with existing enforced path is not allowed.
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "/federate/some", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "/federate/some", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// api4 is not valid URL path (does not start with /)
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "api4", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "api4", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// api4/ is not valid URL path (does not start with /)
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "api4/", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "api4/", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		// api4/something is not valid URL path (does not start with /)
-		_, err = NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "api4/something", "/api3"}))
+		_, err = NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "api4/something", "/api3"}))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 	})
-	r, err := NewRoutes(m.url, proxyLabel, WithPassthroughPaths([]string{"/api1", "/api2/something", "/graph/"}))
+	r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithPassthroughPaths([]string{"/api1", "/api2/something", "/graph/"}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +248,7 @@ func TestWithPassthroughPaths(t *testing.T) {
 			r.ServeHTTP(w, httptest.NewRequest(tcase.method, tcase.url, nil))
 			resp := w.Result()
 			if resp.StatusCode != tcase.expCode {
-				b, err := ioutil.ReadAll(resp.Body)
+				b, err := io.ReadAll(resp.Body)
 				fmt.Println(string(b), err)
 				t.Fatalf("expected status code %v, got %d", tcase.expCode, resp.StatusCode)
 			}
@@ -315,7 +314,7 @@ func TestMatch(t *testing.T) {
 					),
 				)
 				defer m.Close()
-				r, err := NewRoutes(m.url, proxyLabel, WithEnabledLabelsAPI())
+				r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithEnabledLabelsAPI())
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -336,7 +335,7 @@ func TestMatch(t *testing.T) {
 				r.ServeHTTP(w, req)
 
 				resp := w.Result()
-				body, _ := ioutil.ReadAll(resp.Body)
+				body, _ := io.ReadAll(resp.Body)
 				defer resp.Body.Close()
 
 				if resp.StatusCode != tc.expCode {
@@ -412,7 +411,7 @@ func TestMatchWithPost(t *testing.T) {
 					),
 				)
 				defer m.Close()
-				r, err := NewRoutes(m.url, proxyLabel, WithEnabledLabelsAPI())
+				r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel}, WithEnabledLabelsAPI())
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -433,7 +432,7 @@ func TestMatchWithPost(t *testing.T) {
 				r.ServeHTTP(w, req)
 
 				resp := w.Result()
-				body, _ := ioutil.ReadAll(resp.Body)
+				body, _ := io.ReadAll(resp.Body)
 				defer resp.Body.Close()
 
 				if resp.StatusCode != tc.expCode {
@@ -511,8 +510,8 @@ func TestSeries(t *testing.T) {
 					),
 				)
 				defer m.Close()
-				var opts []Option
-				r, err := NewRoutes(m.url, proxyLabel, opts...)
+
+				r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel})
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -525,7 +524,9 @@ func TestSeries(t *testing.T) {
 				if tc.promQuery != "" {
 					q.Add(matchersParam, tc.promQuery)
 				}
-				q.Set(proxyLabel, tc.labelv)
+				if tc.labelv != "" {
+					q.Set(proxyLabel, tc.labelv)
+				}
 				u.RawQuery = q.Encode()
 
 				w := httptest.NewRecorder()
@@ -534,7 +535,7 @@ func TestSeries(t *testing.T) {
 
 				resp := w.Result()
 
-				body, err := ioutil.ReadAll(resp.Body)
+				body, err := io.ReadAll(resp.Body)
 
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -621,8 +622,8 @@ func TestSeriesWithPost(t *testing.T) {
 					),
 				)
 				defer m.Close()
-				var opts []Option
-				r, err := NewRoutes(m.url, proxyLabel, opts...)
+
+				r, err := NewRoutes(m.url, proxyLabel, HTTPFormEnforcer{ParameterName: proxyLabel})
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -646,7 +647,7 @@ func TestSeriesWithPost(t *testing.T) {
 
 				resp := w.Result()
 
-				body, err := ioutil.ReadAll(resp.Body)
+				body, err := io.ReadAll(resp.Body)
 
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -671,11 +672,15 @@ func TestSeriesWithPost(t *testing.T) {
 
 func TestQuery(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		labelv        string
-		promQuery     string
-		promQueryBody string
-		method        string
+		name           string
+		labelv         string
+		headers        http.Header
+		headerName     string
+		queryParam     string
+		staticLabelVal string
+		promQuery      string
+		promQueryBody  string
+		method         string
 
 		expCode          int
 		expPromQuery     string
@@ -838,6 +843,32 @@ func TestQuery(t *testing.T) {
 			expPromQuery: `up{instance="localhost:9090",namespace="default"} + foo{namespace="default"}`,
 			expResponse:  okResponse,
 		},
+		{
+			name:           `Static label value`,
+			staticLabelVal: "default",
+			promQuery:      `up{instance="localhost:9090"} + foo{namespace="other"}`,
+			expCode:        http.StatusOK,
+			expPromQuery:   `up{instance="localhost:9090",namespace="default"} + foo{namespace="default"}`,
+			expResponse:    okResponse,
+		},
+		{
+			name:         `http header label value`,
+			headers:      http.Header{"namespace": []string{"default"}},
+			headerName:   "namespace",
+			promQuery:    `up{instance="localhost:9090"} + foo{namespace="other"}`,
+			expCode:      http.StatusOK,
+			expPromQuery: `up{instance="localhost:9090",namespace="default"} + foo{namespace="default"}`,
+			expResponse:  okResponse,
+		},
+		{
+			name:         `query param label value`,
+			queryParam:   "namespace2",
+			labelv:       "default",
+			promQuery:    `up{instance="localhost:9090"} + foo{namespace="other"}`,
+			expCode:      http.StatusOK,
+			expPromQuery: `up{instance="localhost:9090",namespace="default"} + foo{namespace="default"}`,
+			expResponse:  okResponse,
+		},
 	} {
 		for _, endpoint := range []string{"query", "query_range", "query_exemplars"} {
 			t.Run(endpoint+"/"+strings.ReplaceAll(tc.name, " ", "_"), func(t *testing.T) {
@@ -845,18 +876,31 @@ func TestQuery(t *testing.T) {
 				if tc.expPromQueryBody != "" {
 					expBody = url.Values(map[string][]string{"query": {tc.expPromQueryBody}}).Encode()
 				}
-				m := newMockUpstream(
-					checkParameterAbsent(
-						proxyLabel,
-						checkQueryHandler(expBody, queryParam, tc.expPromQuery),
-					),
-				)
+
+				mockHandler := checkQueryHandler(expBody, queryParam, tc.expPromQuery)
+				if (tc.staticLabelVal == "") != (tc.headers == nil) {
+					mockHandler = checkParameterAbsent(proxyLabel, mockHandler)
+				}
+				m := newMockUpstream(mockHandler)
 				defer m.Close()
 				var opts []Option
+
 				if tc.errorOnReplace {
 					opts = append(opts, WithErrorOnReplace())
 				}
-				r, err := NewRoutes(m.url, proxyLabel, opts...)
+
+				var labelEnforcer ExtractLabeler
+				if tc.staticLabelVal != "" {
+					labelEnforcer = StaticLabelEnforcer(tc.staticLabelVal)
+				} else if tc.headerName != "" {
+					labelEnforcer = HTTPHeaderEnforcer{Name: tc.headerName}
+				} else if tc.queryParam != "" {
+					labelEnforcer = HTTPFormEnforcer{ParameterName: tc.queryParam}
+				} else {
+					labelEnforcer = HTTPFormEnforcer{ParameterName: proxyLabel}
+				}
+
+				r, err := NewRoutes(m.url, proxyLabel, labelEnforcer, opts...)
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -867,7 +911,11 @@ func TestQuery(t *testing.T) {
 				}
 				q := u.Query()
 				q.Set(queryParam, tc.promQuery)
-				q.Set(proxyLabel, tc.labelv)
+				if tc.queryParam != "" && tc.labelv != "" {
+					q.Set(tc.queryParam, tc.labelv)
+				} else if tc.staticLabelVal == "" && tc.headerName == "" && tc.labelv != "" {
+					q.Set(proxyLabel, tc.labelv)
+				}
 				u.RawQuery = q.Encode()
 
 				var b io.Reader = nil
@@ -876,11 +924,14 @@ func TestQuery(t *testing.T) {
 				}
 				w := httptest.NewRecorder()
 				req := httptest.NewRequest(tc.method, u.String(), b)
+				if tc.headers != nil {
+					req.Header = tc.headers
+				}
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				r.ServeHTTP(w, req)
 
 				resp := w.Result()
-				body, err := ioutil.ReadAll(resp.Body)
+				body, err := io.ReadAll(resp.Body)
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
