@@ -125,6 +125,20 @@ func (r *rule) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (ar *alertingRule) State() string {
+	s := "inactive"
+	for _, a := range ar.Alerts {
+		switch a.State {
+		case "firing":
+			return "firing"
+		case "pending":
+			s = "firing"
+		}
+	}
+
+	return s
+}
+
 type alertingRule struct {
 	Name        string        `json:"name"`
 	Query       string        `json:"query"`
@@ -206,11 +220,45 @@ func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, 
 	filtered := []*ruleGroup{}
 	for _, rg := range rgs.RuleGroups {
 		var rules []rule
-		for _, rule := range rg.Rules {
-			if lval := rule.Labels().Get(r.label); lval != "" && slices.Contains(lvalues, lval) {
-				rules = append(rules, rule)
+		for _, rgr := range rg.Rules {
+			if lval := rgr.Labels().Get(r.label); lval != "" && slices.Contains(lvalues, lval) {
+				rules = append(rules, rgr)
+				continue
+			}
+
+			if rgr.alertingRule == nil {
+				continue
+			}
+
+			var ar *alertingRule
+			for i := range rgr.alertingRule.Alerts {
+				if lval := rgr.alertingRule.Alerts[i].Labels.Get(r.label); lval == "" || !slices.Contains(lvalues, lval) {
+					continue
+				}
+
+				if ar == nil {
+					ar = &alertingRule{
+						Name:        rgr.alertingRule.Name,
+						Query:       rgr.alertingRule.Query,
+						Duration:    rgr.alertingRule.Duration,
+						Labels:      rgr.alertingRule.Labels.Copy(),
+						Annotations: rgr.alertingRule.Annotations.Copy(),
+						Alerts:      nil,
+						Health:      rgr.alertingRule.Health,
+						LastError:   rgr.alertingRule.LastError,
+						Type:        rgr.alertingRule.Type,
+					}
+				}
+
+				ar.Alerts = append(ar.Alerts, rgr.alertingRule.Alerts[i])
+			}
+
+			if ar != nil {
+				//ar.State = ar.State()
+				rules = append(rules, rule{alertingRule: ar})
 			}
 		}
+
 		if len(rules) > 0 {
 			rg.Rules = rules
 			filtered = append(filtered, rg)
