@@ -14,7 +14,9 @@
 package injectproxy
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -23,6 +25,39 @@ import (
 type Enforcer struct {
 	labelMatchers  map[string]*labels.Matcher
 	errorOnReplace bool
+}
+
+func equalMatcher(label string, vals ...string) *labels.Matcher {
+	if len(vals) == 1 {
+		return &labels.Matcher{
+			Name:  label,
+			Type:  labels.MatchEqual,
+			Value: vals[0],
+		}
+	}
+
+	return &labels.Matcher{
+		Name:  label,
+		Type:  labels.MatchRegexp,
+		Value: labelValuesToRegexpString(vals),
+	}
+}
+
+func regexMatcher(label string, re string) (*labels.Matcher, error) {
+	compiledRegex, err := regexp.Compile(re)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex: %w", err)
+	}
+
+	if compiledRegex.MatchString("") {
+		return nil, errors.New("Regex should not match empty string")
+	}
+
+	return &labels.Matcher{
+		Name:  label,
+		Type:  labels.MatchRegexp,
+		Value: re,
+	}, nil
 }
 
 func NewEnforcer(errorOnReplace bool, ms ...*labels.Matcher) *Enforcer {

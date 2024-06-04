@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
 )
 
@@ -170,7 +171,7 @@ type alert struct {
 // modifyAPIResponse unwraps the Prometheus API response, passes the enforced
 // label value and the response to the given function and finally replaces the
 // result in the response.
-func modifyAPIResponse(f func([]string, *apiResponse) (interface{}, error)) func(*http.Response) error {
+func modifyAPIResponse(f func([]string, *apiResponse, *http.Request) (interface{}, error)) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		if resp.StatusCode != http.StatusOK {
 			// Pass non-200 responses as-is.
@@ -182,7 +183,7 @@ func modifyAPIResponse(f func([]string, *apiResponse) (interface{}, error)) func
 			return fmt.Errorf("can't decode API response: %w", err)
 		}
 
-		v, err := f(MustLabelValues(resp.Request.Context()), apir)
+		v, err := f(MustLabelValues(resp.Request.Context()), apir, resp.Request)
 		if err != nil {
 			return err
 		}
@@ -204,10 +205,15 @@ func modifyAPIResponse(f func([]string, *apiResponse) (interface{}, error)) func
 	}
 }
 
-func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, error) {
+func (r *routes) filterRules(lvalues []string, resp *apiResponse, req *http.Request) (interface{}, error) {
 	var rgs rulesData
 	if err := json.Unmarshal(resp.Data, &rgs); err != nil {
 		return nil, fmt.Errorf("can't decode rules data: %w", err)
+	}
+
+	e, err := r.newEnforcer(req)
+	if err != nil {
+		return nil, err
 	}
 
 	filtered := []*ruleGroup{}
@@ -225,14 +231,26 @@ func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, 
 
 			var ar *alertingRule
 			for i := range rgr.alertingRule.Alerts {
-				if lval := rgr.alertingRule.Labels.Get(r.label); lval == "" || !slices.Contains(lvalues, lval) {
+				if lval := rgr.alertingRule.Alerts[i].Labels.Get(r.label); lval == "" || !slices.Contains(lvalues, lval) {
 					continue
 				}
 
 				if ar == nil {
+					expr, err := parser.ParseExpr(rgr.alertingRule.Query)
+					if err != nil {
+						queryParseError := newQueryParseError(err)
+						return nil, queryParseError
+					}
+
+					if err := e.EnforceNode(expr); err != nil {
+						if _, ok := err.(IllegalLabelMatcherError); ok {
+							return nil, err
+						}
+					}
+
 					ar = &alertingRule{
 						Name:        rgr.alertingRule.Name,
-						Query:       rgr.alertingRule.Query,
+						Query:       expr.String(),
 						Duration:    rgr.alertingRule.Duration,
 						Labels:      rgr.alertingRule.Labels.Copy(),
 						Annotations: rgr.alertingRule.Annotations.Copy(),
@@ -260,7 +278,7 @@ func (r *routes) filterRules(lvalues []string, resp *apiResponse) (interface{}, 
 	return &rulesData{RuleGroups: filtered}, nil
 }
 
-func (r *routes) filterAlerts(lvalues []string, resp *apiResponse) (interface{}, error) {
+func (r *routes) filterAlerts(lvalues []string, resp *apiResponse, _ *http.Request) (interface{}, error) {
 	var data alertsData
 	if err := json.Unmarshal(resp.Data, &data); err != nil {
 		return nil, fmt.Errorf("can't decode alerts data: %w", err)

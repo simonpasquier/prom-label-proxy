@@ -16,6 +16,7 @@ package injectproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -378,6 +379,7 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 		"/api/v1/alerts": modifyAPIResponse(r.filterAlerts),
 	}
 	proxy.ModifyResponse = r.ModifyResponse
+
 	return r, nil
 }
 
@@ -429,6 +431,7 @@ func MustLabelValues(ctx context.Context) []string {
 	if !ok {
 		panic(fmt.Sprintf("can't find the %q value in the context", keyLabel))
 	}
+
 	if len(labels) == 0 {
 		panic(fmt.Sprintf("empty %q value in the context", keyLabel))
 	}
@@ -465,42 +468,34 @@ func (r *routes) passthrough(w http.ResponseWriter, req *http.Request) {
 	r.handler.ServeHTTP(w, req)
 }
 
-func (r *routes) query(w http.ResponseWriter, req *http.Request) {
-	var matcher *labels.Matcher
+func (r *routes) newEnforcer(req *http.Request) (*Enforcer, error) {
+	values := MustLabelValues(req.Context())
 
-	if len(MustLabelValues(req.Context())) > 1 {
-		if r.regexMatch {
-			prometheusAPIError(w, "Only one label value allowed with regex match", http.StatusBadRequest)
-			return
+	var matcher *labels.Matcher
+	if r.regexMatch {
+		if len(values) > 1 {
+			return nil, errors.New("Only one label value allowed with regex match")
 		}
-		matcher = &labels.Matcher{
-			Name:  r.label,
-			Type:  labels.MatchRegexp,
-			Value: labelValuesToRegexpString(MustLabelValues(req.Context())),
+
+		var err error
+		matcher, err = regexMatcher(r.label, values[0])
+		if err != nil {
+			return nil, err
 		}
+
 	} else {
-		matcherType := labels.MatchEqual
-		matcherValue := MustLabelValue(req.Context())
-		if r.regexMatch {
-			compiledRegex, err := regexp.Compile(matcherValue)
-			if err != nil {
-				prometheusAPIError(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			if compiledRegex.MatchString("") {
-				prometheusAPIError(w, "Regex should not match empty string", http.StatusBadRequest)
-				return
-			}
-			matcherType = labels.MatchRegexp
-		}
-		matcher = &labels.Matcher{
-			Name:  r.label,
-			Type:  matcherType,
-			Value: matcherValue,
-		}
+		matcher = equalMatcher(r.label, values...)
 	}
 
-	e := NewEnforcer(r.errorOnReplace, matcher)
+	return NewEnforcer(r.errorOnReplace, matcher), nil
+}
+
+func (r *routes) query(w http.ResponseWriter, req *http.Request) {
+	e, err := r.newEnforcer(req)
+	if err != nil {
+		prometheusAPIError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// The `query` can come in the URL query string and/or the POST body.
 	// For this reason, we need to try to enforcing in both places.
@@ -560,6 +555,7 @@ func enforceQueryValues(e *Enforcer, v url.Values) (values string, noQuery bool,
 	if v.Get(queryParam) == "" {
 		return v.Encode(), false, nil
 	}
+
 	expr, err := parser.ParseExpr(v.Get(queryParam))
 	if err != nil {
 		queryParseError := newQueryParseError(err)
@@ -570,6 +566,7 @@ func enforceQueryValues(e *Enforcer, v url.Values) (values string, noQuery bool,
 		if _, ok := err.(IllegalLabelMatcherError); ok {
 			return "", true, err
 		}
+
 		enforceLabelError := newEnforceLabelError(err)
 		return "", true, enforceLabelError
 	}
