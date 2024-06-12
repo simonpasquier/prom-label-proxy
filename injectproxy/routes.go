@@ -44,18 +44,20 @@ type routes struct {
 	label    string
 	el       ExtractLabeler
 
-	mux            http.Handler
-	modifiers      map[string]func(*http.Response) error
-	errorOnReplace bool
-	regexMatch     bool
+	mux                   http.Handler
+	modifiers             map[string]func(*http.Response) error
+	errorOnReplace        bool
+	regexMatch            bool
+	rulesWithActiveAlerts bool
 }
 
 type options struct {
-	enableLabelAPIs  bool
-	passthroughPaths []string
-	errorOnReplace   bool
-	registerer       prometheus.Registerer
-	regexMatch       bool
+	enableLabelAPIs       bool
+	passthroughPaths      []string
+	errorOnReplace        bool
+	registerer            prometheus.Registerer
+	regexMatch            bool
+	rulesWithActiveAlerts bool
 }
 
 type Option interface {
@@ -96,6 +98,13 @@ func WithPassthroughPaths(paths []string) Option {
 func WithErrorOnReplace() Option {
 	return optionFunc(func(o *options) {
 		o.errorOnReplace = true
+	})
+}
+
+// WithActiveAlerts causes the proxy to return rules with active alerts.
+func WithActiveAlerts() Option {
+	return optionFunc(func(o *options) {
+		o.rulesWithActiveAlerts = true
 	})
 }
 
@@ -291,12 +300,13 @@ func NewRoutes(upstream *url.URL, label string, extractLabeler ExtractLabeler, o
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 
 	r := &routes{
-		upstream:       upstream,
-		handler:        proxy,
-		label:          label,
-		el:             extractLabeler,
-		errorOnReplace: opt.errorOnReplace,
-		regexMatch:     opt.regexMatch,
+		upstream:              upstream,
+		handler:               proxy,
+		label:                 label,
+		el:                    extractLabeler,
+		errorOnReplace:        opt.errorOnReplace,
+		regexMatch:            opt.regexMatch,
+		rulesWithActiveAlerts: opt.rulesWithActiveAlerts,
 	}
 	mux := newStrictMux(newInstrumentedMux(http.NewServeMux(), opt.registerer))
 
