@@ -66,6 +66,7 @@ func main() {
 		unsafePassthroughPaths string // Comma-delimited string.
 		errorOnReplace         bool
 		regexMatch             bool
+		headerUsesListSyntax   bool
 	)
 
 	flagset := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
@@ -84,6 +85,7 @@ func main() {
 		"API (like /api/v1/configuration) which isn't enforced by prom-label-proxy. NOTE: \"all\" matching paths like \"/\" or \"\" and regex are not allowed.")
 	flagset.BoolVar(&errorOnReplace, "error-on-replace", false, "When specified, the proxy will return HTTP status code 400 if the query already contains a label matcher that differs from the one the proxy would inject.")
 	flagset.BoolVar(&regexMatch, "regex-match", false, "When specified, the tenant name is treated as a regular expression. In this case, only one tenant name should be provided.")
+	flagset.BoolVar(&headerUsesListSyntax, "header-uses-list-syntax", false, "When specified, the header line value will be parsed as a comma-separated list. This allows a single tenant header line to specify multiple tenant names.")
 
 	//nolint: errcheck // Parse() will exit on error.
 	flagset.Parse(os.Args[1:])
@@ -122,9 +124,11 @@ func main() {
 	if enableLabelAPIs {
 		opts = append(opts, injectproxy.WithEnabledLabelsAPI())
 	}
+
 	if len(unsafePassthroughPaths) > 0 {
 		opts = append(opts, injectproxy.WithPassthroughPaths(strings.Split(unsafePassthroughPaths, ",")))
 	}
+
 	if errorOnReplace {
 		opts = append(opts, injectproxy.WithErrorOnReplace())
 	}
@@ -134,16 +138,19 @@ func main() {
 			if len(labelValues) > 1 {
 				log.Fatalf("Regex match is limited to one label value")
 			}
+
 			compiledRegex, err := regexp.Compile(labelValues[0])
 			if err != nil {
 				log.Fatalf("Invalid regexp: %v", err.Error())
 				return
 			}
+
 			if compiledRegex.MatchString("") {
 				log.Fatalf("Regex should not match empty string")
 				return
 			}
 		}
+
 		opts = append(opts, injectproxy.WithRegexMatch())
 	}
 
@@ -154,7 +161,7 @@ func main() {
 	case queryParam != "":
 		extractLabeler = injectproxy.HTTPFormEnforcer{ParameterName: queryParam}
 	case headerName != "":
-		extractLabeler = injectproxy.HTTPHeaderEnforcer{Name: http.CanonicalHeaderKey(headerName)}
+		extractLabeler = injectproxy.HTTPHeaderEnforcer{Name: http.CanonicalHeaderKey(headerName), ParseListSyntax: headerUsesListSyntax}
 	}
 
 	var g run.Group
